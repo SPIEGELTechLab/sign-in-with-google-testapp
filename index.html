@@ -1,0 +1,160 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width,initial-scale=1">
+    <title>sign-in-with-google-testapp</title>
+
+    <script src="https://accounts.google.com/gsi/client" async defer></script>
+    <script async src="https://cdn.ampproject.org/amp-story-player-v0.js"></script>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="//unpkg.com/alpinejs" defer></script>
+
+    <link href="https://cdn.ampproject.org/amp-story-player-v0.css" rel='stylesheet' type='text/css'>
+</head>
+<body class="overflow-hidden">
+    
+    <!-- story content -->
+    <main class="absolute inset-0 bg-green-300">
+        <amp-story-player
+            x-data="player"
+            x-effect="$store.hasAccess && requestPlay()"
+            data-url="https://www.refinery29.com/stories/how-stuff-is-made-money/#ignoreLocalStorageHistory=true"
+            class="w-full h-screen"
+        >
+            <script type="application/json">
+                {
+                    "behavior": {
+                        "pageScroll": false
+                    }
+                }
+            </script>
+        </amp-story-player>
+    </main>
+
+    <!-- backdrop -->
+    <div
+        x-data
+        x-show="!$store.isPlayerLoaded || !$store.hasAccess"
+        class="absolute inset-0 bg-black transition-opacity flex items-center justify-center"
+        :class="{
+            'opacity-100': !$store.isPlayerLoaded,
+            'opacity-50': $store.isPlayerLoaded && !$store.hasAccess
+        }"
+    >
+        <div
+            class="animate-spin border-b-2 border-l-2 border-r-2 border-white h-10 rounded-full w-10"
+            x-show="!$store.isPlayerLoaded"
+        ></div>
+    </div>
+
+    <!-- Login modal -->
+    <div
+        x-data="modal"
+        class="absolute w-full bottom-0 flex justify-center items-center bg-white h-48 transition-transform"
+        :class="{ 'translate-y-72': !open }"
+        style="box-shadow: 0 -25px 50px -12px rgb(0 0 0 / 0.25);"
+    ></div>
+    <script>
+        function parseJwt (token) {
+            const base64Url = token.split('.')[1];
+            const base64 = base64Url.replace(/-/g, '+').replace(/_/g, '/');
+            const jsonPayload = decodeURIComponent(atob(base64).split('').map(function(c) {
+                return '%' + ('00' + c.charCodeAt(0).toString(16)).slice(-2);
+            }).join(''));
+
+            return JSON.parse(jsonPayload);
+        }
+
+        document.addEventListener('alpine:init', () => {
+            Alpine.store('hasAccess', false);
+            Alpine.store('isPlayerLoaded', false);
+
+            Alpine.data('modal', () => ({
+                open: false,
+    
+                init() {
+                    this.$store.hasAccess = this.hasValidCredential;
+                    if (this.hasValidCredential) {
+                        return;
+                    }
+                    localStorage.removeItem('story_credential');
+                    if (this.isGoogleReady) {
+                        this.onGoogleReady();
+                    } else {
+                        window.onload = () => this.onGoogleReady();
+                    }
+                },
+
+                onGoogleReady() {
+                    google.accounts.id.initialize({
+                        client_id: '11154371571-v6cgojnc43o9ifp7o7fh4284kbepaicf.apps.googleusercontent.com',
+                        callback: (credential) => this.onGoogleCredentialResponse(credential),
+                    });
+                    google.accounts.id.renderButton(this.$el, {});
+                    this.open = true;
+                },
+
+                onGoogleCredentialResponse(credentialResponse) {
+                    if (!credentialResponse || !credentialResponse.credential) {
+                        return;
+                    }
+                    localStorage.setItem('story_credential', credentialResponse.credential);
+                    this.open = false;
+                    this.$store.hasAccess = true;
+                },
+
+                get hasValidCredential() {
+                    const encodedCredential = localStorage.getItem('story_credential');
+                    if (!encodedCredential) {
+                        return false;
+                    }
+                    let credential;
+                    try {
+                        credential = parseJwt(encodedCredential);
+                    } catch (e) {
+                        return false;
+                    }
+                    const now = new Date().getTime();
+                    const exp = typeof credential.exp === 'number' ? credential.exp * 1000 : 0;
+                    return now < exp;
+                },
+
+                get isGoogleReady() {
+                    return window.google && window.google.accounts && window.google.accounts.id;
+                }
+            }));
+
+            Alpine.data('player', () => ({
+                init() {
+                    if (this.$el.isReady) {
+                        this.onPlayerReady();
+                    } else {
+                        this.$el.addEventListener('ready', () => this.onPlayerReady());
+                    }
+                },
+
+                onPlayerReady() {
+                    this.$el.addEventListener('storyNavigation', () => this.onStoryNavigation());
+                    this.$el.add([
+                        { href: this.$el.dataset.url }
+                    ]);
+                },
+
+                onStoryNavigation() {
+                    this.$store.isPlayerLoaded = true;
+                    this.$el.pause();
+                    this.requestPlay();
+                },
+
+                requestPlay() {
+                    if (!this.$store.isPlayerLoaded || !this.$store.hasAccess) {
+                        return;
+                    }
+                    this.$el.play();
+                }
+            }))
+        })
+    </script>
+</body>
+</html>
