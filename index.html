@@ -74,8 +74,11 @@
                 open: false,
     
                 init() {
-                    this.$store.hasAccess = this.hasValidCredential;
-                    if (this.hasValidCredential) {
+                    const urlParams = new URLSearchParams(window.location.search);
+                    this.$store.hasAccess = 
+                        urlParams.get('utm_source') !== 'newsshowcase'
+                        || this.hasValidCredential;
+                    if (this.$store.hasAccess) {
                         return;
                     }
                     localStorage.removeItem('story_credential');
